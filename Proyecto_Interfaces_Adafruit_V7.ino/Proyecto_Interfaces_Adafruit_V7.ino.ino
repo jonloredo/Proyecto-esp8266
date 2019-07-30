@@ -3,29 +3,31 @@
 //#define D2 4 SDA para Display
 #define D3 0
 #define D4 2
-#define BOMBA 14
-#define D6 12
+#define D5 14
+#define BOMBA 12
 #define D7 13
 #define D8 15
 
 #include <Adafruit_Sensor.h>
 #include <DHT.h>
-//#include <DHT_U.h>
 #include <LiquidCrystal_I2C.h>
+#include <Ticker.h>  //Ticker Library
+
+//Declaración de Ticker para un tiempo1 es un pseudo-temporizador se usará más adelante
+Ticker tiempo1;
+Ticker tiempo2;
 
 //Credenciales adafruit
 
 #define IO_USERNAME  "jonloredo"
 #define IO_KEY       "41a895c49a304c1eb9786a6900b6b54e"
 
-
-
 //Credenciales Wifi
 
 /******************************* WIFI **************************************/
 
 #define WIFI_SSID   "Totalplay-549E"
-#define WIFI_PASS   "549EC05675mRFp3U"
+#define WIFI_PASS   "549EC05675mRFp3U"  
 
 /*#define WIFI_SSID   "jonloredoWiFi"
 #define WIFI_PASS   "labrador86"*/
@@ -60,11 +62,18 @@ DHT dht(DHTPin, DHTTYPE);
 
 
 // set up the 'temperature' and 'humidity' feeds
-AdafruitIO_Feed *temperatura2io = io.feed("temperatura_dht11");
-AdafruitIO_Feed *humedad2io = io.feed("humedad_dht11");
-// Adafruit riego
-AdafruitIO_Feed *nriegosensor = io.feed("nivel_de_riego");
+  AdafruitIO_Feed *temperatura2io = io.feed("temperatura_dht11");
+  AdafruitIO_Feed *humedad2io = io.feed("humedad_dht11");
 
+// Adafruit riego
+  AdafruitIO_Feed *nriegosensor = io.feed("nivel_de_riego");
+
+// set up the 'regar' feed para activar función en dashboard adafruit
+  AdafruitIO_Feed *regar = io.feed("regar");
+  AdafruitIO_Feed *autom = io.feed("autom");
+  int autom_feed;
+
+  
 float temperatura_dht11;
 float humedad_dht11;
 
@@ -72,13 +81,18 @@ float humedad_dht11;
 int value;
 String n_riego;
 
-LiquidCrystal_I2C lcd(0x3F, 16, 2); //Constructor LCD
+//Constructor LCD
+LiquidCrystal_I2C lcd(0x3F, 16, 2);
+
+
 
 void setup() {
 
   Serial.begin(115200);
   delay(100);
 
+ // Definimos pin asignado a BOMBA como salida
+  pinMode(BOMBA, OUTPUT);
 
 //Setup para LCD
   lcd.begin(16,2);
@@ -106,8 +120,12 @@ void setup() {
   // the handleMessage function (defined below)
   // will be called whenever a message is
   // received from adafruit io.
-  digital->onMessage(handleMessage);
-
+  // Adafruit IO Digital Output Example
+  // Tutorial Link: https://learn.adafruit.com/adafruit-io-basics-digital-output
+  
+  regar->onMessage(handleMessage); // Configurar con el nombre de mi feed 'regar'
+  autom->onMessage(handleMessage2);  // Configurar con el nombre de mi feed 'autom'
+  
   // wait for a connection
   int i=0;
   lcd.clear();
@@ -126,7 +144,8 @@ void setup() {
   // we are connected
   Serial.println();
   Serial.println(io.statusText());
-  digital->get();
+  regar->get(); // Configurar con el nombre de mi feed 'regar'
+  autom->get(); // Configurar con el nombre de mi feed 'autom'
   
   lcd.clear();
   lcd.setCursor(0, 0);
@@ -134,112 +153,125 @@ void setup() {
   lcd.setCursor(0, 1);
   lcd.print("connected!!");
   delay(1500);
+  lcd.clear();  
 
-  // Definimos pin asignado a BOMBA como salida
-pinMode(BOMBA, OUTPUT);
+  /*Se utiliza Ticker como pseudo-temporizador cada 30 segundos llamando la 
+  función nivel_riego() con operador attach para poder seguir haciendo llamadas a otras funciones en
+  el programa ej enlace https://circuits4you.com/2018/01/02/esp8266-timer-ticker-example/ */
+  tiempo1.attach(30,nivel_riego);
+  tiempo2.attach(2,automata);
 
 }
 
 void loop() {
 
-   // io.run(); is required for all sketches.
+  // io.run(); is required for all sketches.
   // it should always be present at the top of your loop
   // function. it keeps the client connected to
   // io.adafruit.com, and processes any incoming data.
   io.run();
 
-  temperatura_dht11 = dht.readTemperature(); // Gets the values of the temperature
-  humedad_dht11 = dht.readHumidity(); // Gets the values of the humidity 
+//Lectura y muestra de datos de DHT11 en pantalla LCD
 
+temperatura_dht11 = dht.readTemperature(); // Gets the values of the temperature
+humedad_dht11 = dht.readHumidity(); // Gets the values of the humidity 
+
+  //Mostrar valores de Temperatura y humedad en monitor serial y pantalla LCD
   Serial.print("Temperatura: ");
   Serial.println(temperatura_dht11);
 
   Serial.print("Humedad: ");
   Serial.println(humedad_dht11);
-
-  temperatura2io->save(temperatura_dht11);
-  humedad2io->save(humedad_dht11);
-
-
-  //Niveles de riego programa principal
+    
+  lcd.setCursor(0, 0);
+  lcd.print("T=");
+  lcd.setCursor(2, 0);
+  lcd.print(temperatura_dht11);
+  lcd.setCursor(4,0);
+  lcd.print("C  ");
+  
+  lcd.setCursor(6, 0);
+  lcd.print("H=");
+  lcd.setCursor(8, 0);
+  lcd.print(humedad_dht11);
+  lcd.setCursor(10,0);
+  lcd.print("%  ");
+ 
+  /*Mostrará niveles de riego en cinco niveles diferentes dependiendo el voltaje 
+  de entrada a pin A0 y mostrará salida ocupando toda la segunda fila del LCD*/
   value= analogRead(A0);
 
-   if(value>432){
+    if(value>432){
     n_riego = String("Muy Alto");
     Serial.print("Nivel de Riego: ");
     Serial.println(n_riego);
      
-    lcd.clear();
-    lcd.setCursor(0, 0);
-    lcd.print("Nivel Riego");
     lcd.setCursor(0, 1);
-    lcd.print("Muy Alto");
+    lcd.print("Riego: Muy Alto");     
    }
-   if(value>324 && value<=432){
+   
+    if(value>324 && value<=432){
     n_riego = String("Alto");
     Serial.print("Nivel de Riego: ");
     Serial.println(n_riego);
 
-    lcd.clear();
-    lcd.setCursor(0, 0);
-    lcd.print("Nivel Riego");
     lcd.setCursor(0, 1);
-    lcd.print("Alto");
+    lcd.print("Riego: Alto     ");
    }
-   if(value>216 && value<=324){
+   
+    if(value>216 && value<=324){
     n_riego = String("Bueno");
     Serial.print("Nivel de Riego: ");
     Serial.println(n_riego);
-
-    lcd.clear();
-    lcd.setCursor(0, 0);
-    lcd.print("Nivel Riego");
+    
     lcd.setCursor(0, 1);
-    lcd.print("Bueno");
+    lcd.print("Riego: Bueno    ");
    }
+   
     if(value>108 && value<=216){
     n_riego = String("Bajo");
     Serial.print("Nivel de Riego: ");
     Serial.println(n_riego);
 
-    lcd.clear();
-    lcd.setCursor(0, 0);
-    lcd.print("Nivel Riego");
     lcd.setCursor(0, 1);
-    lcd.print("Bajo");
+    lcd.print("Riego: Bajo     ");
    }
-      if(value<=108){
+   
+    if(value<=108){
     n_riego = String("Muy Bajo");
     Serial.print("Nivel de Riego: ");
     Serial.println(n_riego);
 
-    lcd.clear();
-    lcd.setCursor(0, 0);
-    lcd.print("Nivel Riego");
     lcd.setCursor(0, 1);
-    lcd.print("Muy Bajo");
+    lcd.print("Riego: Muy Bajo ");
    }
-   delay(3500);
-  nriegosensor->save(n_riego);
-
-  //Funciones para LCD
-  lcd.clear();
-  
-  lcd.setCursor(0, 0);
-  lcd.print("Temp= ");
-  lcd.setCursor(7, 0);
-  lcd.print(temperatura_dht11);
-  
-  lcd.setCursor(0, 1);
-  lcd.print("Hum= ");
-  lcd.setCursor(6, 1);
-  lcd.print(humedad_dht11);
-  
-  delay(3500);
-
+   
+delay(100);
+ 
 }
 
-// this function is called whenever an 'digital' feed message
+//Función para envíar valores de nivel de riego, temperatura y humedad a Adafruit
+
+void nivel_riego(){
+  
+  temperatura2io->save(temperatura_dht11);
+  humedad2io->save(humedad_dht11); 
+  nriegosensor->save(n_riego); 
+  
+  }
+
+void automata(){
+
+   if(autom_feed == 1 && value<216)
+      digitalWrite(BOMBA,HIGH);
+    
+   
+    else
+      digitalWrite(BOMBA,LOW);
+  
+  }
+
+// this function is called whenever an 'regar' feed message
 // is received from Adafruit IO. it was attached to
 // the 'digital' feed in the setup() function above.
 void handleMessage(AdafruitIO_Data *data) {
@@ -251,7 +283,24 @@ void handleMessage(AdafruitIO_Data *data) {
   else
     Serial.println("LOW");
 
-
   digitalWrite(BOMBA, data->toPinLevel());
 }
 
+
+// this function is called whenever an 'autom' feed message
+// is received from Adafruit IO. it was attached to
+// the 'digital' feed in the setup() function above.
+void handleMessage2(AdafruitIO_Data *data2) {
+
+  Serial.print("received <- ");
+
+  if(data2->toPinLevel() == HIGH){
+     Serial.println("HIGH");
+     autom_feed=1;
+  }
+  else
+  {
+    Serial.println("LOW");
+    autom_feed=0;}
+
+}
