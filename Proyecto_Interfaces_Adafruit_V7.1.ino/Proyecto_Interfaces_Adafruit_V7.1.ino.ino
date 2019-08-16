@@ -187,6 +187,12 @@ void loop() {
 temperatura_dht11 = int(dht.readTemperature()); // Gets the values of the temperature only integer values not float with int()
 humedad_dht11 = int(dht.readHumidity()); // Gets the values of the humidity 
 
+// REVISAR QUE LOS RESULTADOS SEAN VALORES NUMERICOS VALIDOS, INDICANDO QUE LA COMUNICACION ES CORRECTA
+  if (isnan(humedad_dht11) || isnan(temperatura_dht11)) {
+    Serial.println("Falla al leer el sensor DHT11!");
+    return;
+  }
+
   //Mostrar valores de Temperatura y humedad en monitor serial y pantalla LCD
   Serial.print("Temperatura: ");
   Serial.println(temperatura_dht11);
